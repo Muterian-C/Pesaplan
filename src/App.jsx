@@ -16,6 +16,7 @@ import SettingsPage from './pages/settings/SettingsPage';
 import AffordabilityTool from './pages/affordability/AffordabilityTool';
 import BudgetPage from './pages/budget/BudgetPage';
 import BillsPage from './pages/bills/BillsPage';
+import GoogleCallback from './pages/GoogleCallback';
 
 // Valid pages a logged-in user can be on
 const VALID_APP_PAGES = [
@@ -24,42 +25,8 @@ const VALID_APP_PAGES = [
   "budget",
 ];
 
-// Google Callback Handler Component
-function GoogleCallbackHandler({ onLoginSuccess }) {
-  useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const token = urlParams.get('token');
-    const error = urlParams.get('error');
-
-    if (token) {
-      localStorage.setItem('token', token);
-      // Small delay to ensure token is saved
-      setTimeout(() => {
-        if (onLoginSuccess) {
-          onLoginSuccess();
-        }
-        window.location.href = '/dashboard';
-      }, 100);
-    } else if (error) {
-      console.error('Google auth error:', error);
-      window.location.href = '/auth?error=google_failed';
-    } else {
-      window.location.href = '/auth';
-    }
-  }, [onLoginSuccess]);
-
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-950 dark:to-gray-900">
-      <div className="text-center">
-        <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-        <p className="text-gray-500">Completing Google sign in...</p>
-      </div>
-    </div>
-  );
-}
-
 function App() {
-  const { isAuthenticated, loading: authLoading, logout, user: authUser } = useAuth();
+  const { isAuthenticated, loading: authLoading, logout } = useAuth();
   const { 
     page, setPage, 
     incomes, setIncomes,
@@ -68,21 +35,32 @@ function App() {
   } = useApp();
 
   const [initialAuthCheckDone, setInitialAuthCheckDone] = useState(false);
-  const [isGoogleCallback, setIsGoogleCallback] = useState(false);
 
-  // Check if we're on Google callback URL
+  // ─────────────────────────────────────
+  // HANDLE GOOGLE OAUTH CALLBACK URL
+  // ─────────────────────────────────────
   useEffect(() => {
     const path = window.location.pathname;
-    if (path === '/auth/google/success') {
-      setIsGoogleCallback(true);
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token');
+    
+    // Handle Google callback - check for token in URL
+    if (token && (path === '/auth/google/success' || path.includes('google/success'))) {
+      console.log('Google callback detected, saving token...');
+      localStorage.setItem('token', token);
+      // Clean the URL and redirect to dashboard
+      window.history.replaceState({}, document.title, '/dashboard');
+      window.location.reload();
+      return;
+    }
+    
+    // Also handle the case with double slash
+    if (token && window.location.href.includes('//auth/google/success')) {
+      console.log('Double slash Google callback detected, saving token...');
+      localStorage.setItem('token', token);
+      window.location.href = '/dashboard';
     }
   }, []);
-
-  // Handle Google login success
-  const handleGoogleLoginSuccess = () => {
-    // Refetch user data
-    window.location.reload();
-  };
 
   // ─────────────────────────────────────
   // SAVE LAST PAGE TO LOCALSTORAGE
@@ -107,13 +85,10 @@ function App() {
         : "dashboard";
       setPage(restoredPage);
     } else {
-      // Only redirect to landing if not on Google callback
-      if (!isGoogleCallback) {
-        setPage((prev) => (prev === "auth" ? "auth" : "landing"));
-      }
+      setPage((prev) => (prev === "auth" ? "auth" : "landing"));
       localStorage.removeItem("lastPage");
     }
-  }, [isAuthenticated, authLoading, setPage, isGoogleCallback]);
+  }, [isAuthenticated, authLoading, setPage]);
 
   // ─────────────────────────────────────
   // HANDLE LOGOUT
@@ -141,15 +116,18 @@ function App() {
     );
   }
 
-  // Show Google callback handler
-  if (isGoogleCallback) {
-    return <GoogleCallbackHandler onLoginSuccess={handleGoogleLoginSuccess} />;
-  }
-
   // ─────────────────────────────────────
   // PAGE RENDERING
   // ─────────────────────────────────────
   const renderPage = () => {
+    // Check for Google callback first
+    const path = window.location.pathname;
+    const hasToken = new URLSearchParams(window.location.search).get('token');
+    
+    if (hasToken && (path === '/auth/google/success' || path.includes('google/success') || window.location.href.includes('//auth/google/success'))) {
+      return <GoogleCallback />;
+    }
+
     if (!isAuthenticated) {
       if (page === "auth") {
         return <AuthPage onLogin={() => setPage("dashboard")} />;
