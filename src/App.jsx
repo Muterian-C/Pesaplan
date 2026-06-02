@@ -4,10 +4,10 @@ import { useApp } from './context/AppContext';
 import Navbar from './components/layout/Navbar';
 import Footer from './components/layout/Footer';
 
-// Page imports - UPDATED PATHS
+// Page imports
 import LandingPage from './pages/LandingPage';
-import AuthPage from './pages/auth/AuthPage';  // Fixed path
-import Dashboard from './pages/dashboard/Dashboard';  // Fixed path
+import AuthPage from './pages/auth/AuthPage';
+import Dashboard from './pages/dashboard/Dashboard';
 import ExpensesPage from './pages/expenses/ExpensesPage';
 import IncomePage from './pages/income/IncomePage';
 import SavingsPage from './pages/savings/SavingsPage';
@@ -16,30 +16,73 @@ import SettingsPage from './pages/settings/SettingsPage';
 import AffordabilityTool from './pages/affordability/AffordabilityTool';
 import BudgetPage from './pages/budget/BudgetPage';
 import BillsPage from './pages/bills/BillsPage';
-import GoogleCallback from './pages/GoogleCallback';
 
 // Valid pages a logged-in user can be on
 const VALID_APP_PAGES = [
   "dashboard", "expenses", "income",
   "savings", "bills", "insights", "afford", "settings",
-  "budget", "google-callback",
+  "budget",
 ];
+
+// Google Callback Handler Component
+function GoogleCallbackHandler({ onLoginSuccess }) {
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token');
+    const error = urlParams.get('error');
+
+    if (token) {
+      localStorage.setItem('token', token);
+      // Small delay to ensure token is saved
+      setTimeout(() => {
+        if (onLoginSuccess) {
+          onLoginSuccess();
+        }
+        window.location.href = '/dashboard';
+      }, 100);
+    } else if (error) {
+      console.error('Google auth error:', error);
+      window.location.href = '/auth?error=google_failed';
+    } else {
+      window.location.href = '/auth';
+    }
+  }, [onLoginSuccess]);
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-950 dark:to-gray-900">
+      <div className="text-center">
+        <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+        <p className="text-gray-500">Completing Google sign in...</p>
+      </div>
+    </div>
+  );
+}
 
 function App() {
   const { isAuthenticated, loading: authLoading, logout, user: authUser } = useAuth();
   const { 
     page, setPage, 
-    darkMode, setDarkMode,
     incomes, setIncomes,
     expenses, setExpenses,
     savingsGoals, setSavingsGoals,
-    dataLoading, refetchData,
-    totalIncome, totalExpenses, balance,
-    savingsRate, daysToPayday, survivalDays, healthScore, dailyBurnRate,
-    updateUser
   } = useApp();
 
   const [initialAuthCheckDone, setInitialAuthCheckDone] = useState(false);
+  const [isGoogleCallback, setIsGoogleCallback] = useState(false);
+
+  // Check if we're on Google callback URL
+  useEffect(() => {
+    const path = window.location.pathname;
+    if (path === '/auth/google/success') {
+      setIsGoogleCallback(true);
+    }
+  }, []);
+
+  // Handle Google login success
+  const handleGoogleLoginSuccess = () => {
+    // Refetch user data
+    window.location.reload();
+  };
 
   // ─────────────────────────────────────
   // SAVE LAST PAGE TO LOCALSTORAGE
@@ -49,30 +92,6 @@ function App() {
       localStorage.setItem("lastPage", page);
     }
   }, [page]);
-
-  // ─────────────────────────────────────
-  // HANDLE GOOGLE OAUTH CALLBACK URL
-  // ─────────────────────────────────────
-  useEffect(() => {
-    const path = window.location.pathname;
-    if (path === '/auth/google/success') {
-      const urlParams = new URLSearchParams(window.location.search);
-      const token = urlParams.get('token');
-      const error = urlParams.get('error');
-
-      if (token) {
-        localStorage.setItem('token', token);
-        window.history.replaceState({}, document.title, '/');
-        window.location.reload();
-      } else if (error) {
-        window.history.replaceState({}, document.title, '/');
-        setPage('auth');
-      } else {
-        window.history.replaceState({}, document.title, '/');
-        setPage('auth');
-      }
-    }
-  }, [setPage]);
 
   // ─────────────────────────────────────
   // HANDLE AUTHENTICATION STATE
@@ -88,10 +107,13 @@ function App() {
         : "dashboard";
       setPage(restoredPage);
     } else {
-      setPage((prev) => (prev === "auth" ? "auth" : "landing"));
+      // Only redirect to landing if not on Google callback
+      if (!isGoogleCallback) {
+        setPage((prev) => (prev === "auth" ? "auth" : "landing"));
+      }
       localStorage.removeItem("lastPage");
     }
-  }, [isAuthenticated, authLoading, setPage]);
+  }, [isAuthenticated, authLoading, setPage, isGoogleCallback]);
 
   // ─────────────────────────────────────
   // HANDLE LOGOUT
@@ -119,15 +141,15 @@ function App() {
     );
   }
 
+  // Show Google callback handler
+  if (isGoogleCallback) {
+    return <GoogleCallbackHandler onLoginSuccess={handleGoogleLoginSuccess} />;
+  }
+
   // ─────────────────────────────────────
   // PAGE RENDERING
   // ─────────────────────────────────────
   const renderPage = () => {
-    // Special case for Google callback
-    if (page === "google-callback") {
-      return <GoogleCallback />;
-    }
-
     if (!isAuthenticated) {
       if (page === "auth") {
         return <AuthPage onLogin={() => setPage("dashboard")} />;
@@ -161,7 +183,6 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-950 dark:to-gray-900 transition-all duration-300">
-      {/* Navbar - only show when authenticated */}
       {isAuthenticated && <Navbar />}
 
       <main className={isAuthenticated ? "pt-16 pb-20" : ""}>
@@ -170,7 +191,6 @@ function App() {
         </div>
       </main>
 
-      {/* Footer - show on landing page only */}
       {!isAuthenticated && <Footer />}
 
       {/* Animated background blobs */}
